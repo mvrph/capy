@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Minimizer</string>
+    <string-array name="spinner_items">
+        <item>30 seconds</item>
+        <item>45 seconds</item>
+        <item>1 minute</item>
+        <item>2 minutes</item>
+        <item>3 minutes</item>
+        <item>5 minutes</item>
+        <item>10 minutes</item>
+        <item>15 minutes</item>
+        <item>30 minutes</item>
+    </string-array>
+</resources>

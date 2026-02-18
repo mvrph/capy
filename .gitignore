@@ -1,0 +1,18 @@
+# Android build output
+src/.gradle/
+src/app/build/
+src/build/
+
+# Local config (machine-specific)
+src/local.properties
+
+# IDE
+src/.idea/
+*.iml
+
+# Keys / signing
+*.jks
+*.keystore
+
+# OS
+.DS_Store
