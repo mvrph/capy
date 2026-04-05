@@ -1,68 +1,91 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity" >
+    android:fillViewport="true">
 
-    <TextView
-        android:id="@+id/header"
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/main"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:layout_constraintBottom_toTopOf="@+id/delay_in_seconds"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        android:text="Minimizer"
-        android:gravity="center"
-        android:textSize="40sp" >
+        android:padding="16dp"
+        tools:context=".MainActivity" >
 
-    </TextView>
+        <TextView
+            android:id="@+id/header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            android:text="Minimizer"
+            android:gravity="center"
+            android:textSize="40sp" />
 
-    <TextView
-        android:id="@+id/delay_in_seconds"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Delay: "
-        android:textSize="16sp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/delay_in_seconds_input"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        <TextView
+            android:id="@+id/delay_in_seconds"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Delay: "
+            android:textSize="16sp"
+            android:layout_marginTop="32dp"
+            app:layout_constraintEnd_toStartOf="@+id/delay_in_seconds_input"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/header"
+            app:layout_constraintBaseline_toBaselineOf="@+id/delay_in_seconds_input" />
 
-    <EditText
-        android:id="@+id/delay_in_seconds_input"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:hint="180"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        <EditText
+            android:id="@+id/delay_in_seconds_input"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:hint="60"
+            android:inputType="number"
+            android:layout_marginTop="32dp"
+            app:layout_constraintEnd_toStartOf="@+id/setButton"
+            app:layout_constraintStart_toEndOf="@+id/delay_in_seconds"
+            app:layout_constraintTop_toBottomOf="@+id/header" />
 
-    <Button
-        android:id="@+id/setButton"
-        android:text="Set"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/delay_in_seconds_input"
-        app:layout_constraintTop_toTopOf="parent" >
-    </Button>
+        <Button
+            android:id="@+id/setButton"
+            android:text="Set"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/delay_in_seconds_input"
+            app:layout_constraintBaseline_toBaselineOf="@+id/delay_in_seconds_input" />
 
-    <Button
-        android:id="@+id/stopButton"
-        android:text="Exit"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/delay_in_seconds_input"
-        >
-    </Button>
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/motionWakeSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Motion Wake"
+            android:textSize="16sp"
+            android:layout_marginTop="24dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/delay_in_seconds_input" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <Button
+            android:id="@+id/minimizeButton"
+            android:text="Minimize"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/motionWakeSwitch" />
+
+        <Button
+            android:id="@+id/stopButton"
+            android:text="Exit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/minimizeButton" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</ScrollView>
