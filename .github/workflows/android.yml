@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, olares]
 
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +18,11 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+
+      # Self-hosted Olares runner pod doesn't ship with Android SDK
+      # preinstalled (unlike ubuntu-latest). Install + accept licenses.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
