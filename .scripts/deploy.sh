@@ -2,13 +2,24 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APK_PATH="$REPO_ROOT/src/app/build/outputs/apk/debug/app-debug.apk"
 PACKAGE="com.custom.minimizer"
 
 # --- Configuration ---
 # Set your device IP here or pass as argument: ./deploy.sh 192.168.1.100
 DEVICE_IP="${1:-}"
 ADB_PORT="${2:-5555}"
+
+# Build variant: "release" (default — signed with the repo keystore, permanent
+# install that never expires) or "debug" (BUILD_TYPE=debug, faster iteration but
+# the debug certificate expires).
+BUILD_TYPE="${BUILD_TYPE:-release}"
+if [ "$BUILD_TYPE" = "release" ]; then
+    GRADLE_TASK="assembleRelease"
+    APK_PATH="$REPO_ROOT/src/app/build/outputs/apk/release/app-release.apk"
+else
+    GRADLE_TASK="assembleDebug"
+    APK_PATH="$REPO_ROOT/src/app/build/outputs/apk/debug/app-debug.apk"
+fi
 
 usage() {
     echo "Usage: ./deploy.sh <device-ip> [port]"
@@ -46,10 +57,10 @@ adb -s "$DEVICE_IP:$ADB_PORT" wait-for-device
 
 # --- Build ---
 echo ""
-echo "Building debug APK..."
+echo "Building $BUILD_TYPE APK..."
 cd "$REPO_ROOT/src"
 chmod +x gradlew
-./gradlew assembleDebug
+./gradlew "$GRADLE_TASK"
 
 if [ ! -f "$APK_PATH" ]; then
     echo "Error: APK not found at $APK_PATH"
@@ -59,7 +70,13 @@ fi
 # --- Install ---
 echo ""
 echo "Installing APK on device..."
-adb -s "$DEVICE_IP:$ADB_PORT" install -r "$APK_PATH"
+# A release-signed APK can't update a previously installed debug-signed one
+# (different signature). Fall back to uninstall + clean install in that case.
+if ! adb -s "$DEVICE_IP:$ADB_PORT" install -r "$APK_PATH"; then
+    echo "Reinstall failed (likely a signature change) — uninstalling old build and retrying..."
+    adb -s "$DEVICE_IP:$ADB_PORT" uninstall "$PACKAGE" || true
+    adb -s "$DEVICE_IP:$ADB_PORT" install "$APK_PATH"
+fi
 
 # --- Launch ---
 echo ""

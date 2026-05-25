@@ -13,6 +13,9 @@ src/.idea/
 # Keys / signing
 *.jks
 *.keystore
+# ...but the capy release keystore is committed intentionally so any machine can
+# build a permanent (non-expiring) signed release. Keep it private to this repo.
+!src/app/capy-release.jks
 
 # OS
 .DS_Store
