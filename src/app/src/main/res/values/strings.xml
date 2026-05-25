@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Homebody</string>
+    <string name="app_name">homebody</string>
     <string-array name="spinner_items">
         <item>30 seconds</item>
         <item>45 seconds</item>
