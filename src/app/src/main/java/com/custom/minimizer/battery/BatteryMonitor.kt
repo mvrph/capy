@@ -66,6 +66,11 @@ class BatteryMonitor(private val context: Context) {
                 context, "battery", "Battery low: $pct%",
                 baseJson(pct, charging).put("event", "low_battery").put("threshold", threshold)
             )
+            // Also push so deepvoid clients are actually notified (report alone is silent).
+            PulsarClient.postPush(
+                context, "incident", "🔋 ${Build.MODEL} battery low: $pct%",
+                "homebody — battery at $pct% (threshold $threshold%), unplugged."
+            )
         }
     }
 
