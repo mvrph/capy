@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Minimizer"
+rootProject.name = "Homebody"
 include(":app")
