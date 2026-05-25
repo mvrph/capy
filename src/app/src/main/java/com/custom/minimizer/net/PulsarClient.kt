@@ -8,15 +8,22 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executors
 
 /**
  * Minimal client for the pulsar telemetry backend (FastAPI on the Olares server).
  *
  * Flow: register a session once (idempotent server-side), then POST reports.
- * Uses plain HttpURLConnection on a background thread — no extra dependencies,
- * and cleartext to the pulsar host is whitelisted in network_security_config.xml.
+ * Uses plain HttpURLConnection — no extra dependencies, and cleartext to the
+ * pulsar host is whitelisted in network_security_config.xml. All calls run on a
+ * single worker thread so concurrent POSTs can't contend on pulsar's SQLite
+ * (which otherwise 500s under simultaneous writes).
  */
 object PulsarClient {
+    private val worker = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "pulsar-client").apply { isDaemon = true }
+    }
+
     // pulsar listens on 0.0.0.0:8001 on Olares (192.168.4.222). The handheld is
     // on the same /22 LAN, so the LAN address is the fast path.
     const val BASE_URL = "http://192.168.4.222:8001"
@@ -72,8 +79,8 @@ object PulsarClient {
      */
     fun postReport(ctx: Context, channel: String, title: String, body: JSONObject) {
         val app = ctx.applicationContext
-        Thread {
-            if (!ensureSession(app)) return@Thread
+        worker.execute {
+            if (!ensureSession(app)) return@execute
             try {
                 val conn = open("/v1/reports", "POST")
                 val payload = JSONObject()
@@ -89,6 +96,6 @@ object PulsarClient {
             } catch (e: Exception) {
                 Log.e(TAG, "postReport failed: $e")
             }
-        }.start()
+        }
     }
 }

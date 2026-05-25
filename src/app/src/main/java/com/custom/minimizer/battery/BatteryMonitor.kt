@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.util.Log
+import com.custom.minimizer.net.DiscordClient
 import com.custom.minimizer.net.PulsarClient
 import org.json.JSONObject
 
@@ -65,6 +66,10 @@ class BatteryMonitor(private val context: Context) {
             PulsarClient.postReport(
                 context, "battery", "Battery low: $pct%",
                 baseJson(pct, charging).put("event", "low_battery").put("threshold", threshold)
+            )
+            // Alert via the Discord bot (discord_bot_api → DM).
+            DiscordClient.sendMessage(
+                "🔋 homebody (${Build.MODEL}) battery low: $pct% (threshold $threshold%), unplugged."
             )
         }
     }
