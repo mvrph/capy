@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.util.Log
+import com.custom.minimizer.net.DiscordClient
 import com.custom.minimizer.net.PulsarClient
 import org.json.JSONObject
 
@@ -66,10 +67,9 @@ class BatteryMonitor(private val context: Context) {
                 context, "battery", "Battery low: $pct%",
                 baseJson(pct, charging).put("event", "low_battery").put("threshold", threshold)
             )
-            // Also push so deepvoid clients are actually notified (report alone is silent).
-            PulsarClient.postPush(
-                context, "incident", "🔋 ${Build.MODEL} battery low: $pct%",
-                "homebody — battery at $pct% (threshold $threshold%), unplugged."
+            // Alert via the Discord bot (discord_bot_api → DM).
+            DiscordClient.sendMessage(
+                "🔋 homebody (${Build.MODEL}) battery low: $pct% (threshold $threshold%), unplugged."
             )
         }
     }

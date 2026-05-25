@@ -98,28 +98,4 @@ object PulsarClient {
             }
         }
     }
-
-    /**
-     * Publish a push notification to pulsar's SSE stream so connected deepvoid
-     * clients are actually notified — a report alone is silent telemetry.
-     * [source] must be one of pulsar's allow-list:
-     * announcement | incident | account | update | security.
-     */
-    fun postPush(ctx: Context, source: String, title: String, body: String) {
-        worker.execute {
-            try {
-                val conn = open("/v1/push/publish", "POST")
-                val payload = JSONObject()
-                    .put("source", source)
-                    .put("title", title)
-                    .put("body", body)
-                conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-                val code = conn.responseCode
-                Log.i(TAG, "push '$title' -> HTTP $code")
-                conn.disconnect()
-            } catch (e: Exception) {
-                Log.e(TAG, "postPush failed: $e")
-            }
-        }
-    }
 }
