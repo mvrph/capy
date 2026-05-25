@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded OTA APKs live in cacheDir/updates and are handed to the
+         system installer via FileProvider. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

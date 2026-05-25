@@ -22,6 +22,31 @@ cd src
 
 APK output: `src/app/build/outputs/apk/debug/`
 
+## Deploy (wireless)
+
+capy is deployed to **Gameboy Holo** — an RG557 handheld game system (Android, model `vext_k6897v1_64`) — over Wi-Fi via ADB Wireless debugging. It is **not** a kiosk.
+
+The `.scripts/deploy.sh` helper builds the debug APK, installs it, and launches the app:
+
+```bash
+./.scripts/deploy.sh <device-ip> [port]
+```
+
+On Android 11+ (Wireless debugging), the connect port rotates each session, so discover the current one before deploying:
+
+```bash
+# 1. One-time pairing (Developer options > Wireless debugging > Pair device with pairing code)
+adb pair <device-ip>:<pairing-port> <6-digit-code>
+
+# 2. Find the current connect port (pairing persists across reboots; the port does not)
+adb mdns services | grep _adb-tls-connect
+
+# 3. Deploy
+./.scripts/deploy.sh <device-ip> <connect-port>
+```
+
+> Requires a JDK on the build machine (e.g. `brew install --cask temurin@17`).
+
 ## Usage
 
 1. Open the app — overlay permission prompt will appear if not yet granted
