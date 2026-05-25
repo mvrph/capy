@@ -17,8 +17,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.custom.minimizer.battery.BatteryMonitor
 import com.custom.minimizer.motion.MotionWakeService
 import com.custom.minimizer.overlay.MinimizerOverlayService
+import com.custom.minimizer.update.UpdateChecker
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 
@@ -46,6 +48,25 @@ class MainActivity : AppCompatActivity() {
         minimizeButtonSetUp()
         stopButtonSetUp()
         motionWakeSwitchSetUp()
+        batteryThresholdSetUp()
+    }
+
+    private fun batteryThresholdSetUp() {
+        val input = findViewById<EditText>(R.id.battery_threshold_input)
+        val button = findViewById<Button>(R.id.batteryThresholdButton)
+        val prefs = getSharedPreferences(BatteryMonitor.PREFS_NAME, Context.MODE_PRIVATE)
+
+        input.setText(prefs.getInt(BatteryMonitor.KEY_THRESHOLD, BatteryMonitor.DEFAULT_THRESHOLD).toString())
+
+        button.setOnClickListener {
+            val pct = input.text.toString().toIntOrNull()
+            if (pct != null && pct in 1..99) {
+                prefs.edit().putInt(BatteryMonitor.KEY_THRESHOLD, pct).apply()
+                Toast.makeText(this, "Battery alert threshold: $pct%", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Enter a value between 1 and 99", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onResume() {
@@ -59,6 +80,10 @@ class MainActivity : AppCompatActivity() {
 
         // Request battery optimization exemption so alarms aren't throttled
         requestBatteryOptimizationExemption()
+
+        // Check for an OTA update (downloads + prompts install if a newer
+        // versionCode is published on the Olares server).
+        UpdateChecker.checkAndPrompt(this)
 
         // Only start the service once — don't re-trigger onStartCommand on every onResume
         if (!minimizerServiceStarted) {

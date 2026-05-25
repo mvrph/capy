@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- pulsar (telemetry backend) is served over plain HTTP on the LAN/Tailnet.
+     Android blocks cleartext by default on API 28+, so allow it for just
+     these hosts rather than enabling cleartext app-wide. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.4.222</domain>
+        <domain includeSubdomains="false">100.73.157.18</domain>
+        <domain includeSubdomains="true">olares.tailda155e.ts.net</domain>
+    </domain-config>
+</network-security-config>
