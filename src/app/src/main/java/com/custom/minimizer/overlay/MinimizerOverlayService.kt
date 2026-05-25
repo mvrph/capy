@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.lifecycle.LifecycleService
 import com.custom.minimizer.R
+import com.custom.minimizer.battery.BatteryMonitor
 
 
 class MinimizerOverlayService : LifecycleService() {
@@ -25,6 +26,7 @@ class MinimizerOverlayService : LifecycleService() {
     private var overlayView: View? = null
     private var timer: Long = 60 * 1000
     private var wakeLock: PowerManager.WakeLock? = null
+    private var batteryMonitor: BatteryMonitor? = null
 
     // Thread-safe timer using a dedicated thread
     @Volatile private var lastTouchTime: Long = 0
@@ -51,6 +53,11 @@ class MinimizerOverlayService : LifecycleService() {
         wakeLock?.acquire()
 
         startForegroundNotification()
+
+        // Battery alerts: report to pulsar when the level drops below the
+        // configured threshold while unplugged.
+        batteryMonitor = BatteryMonitor(this).also { it.start() }
+
         Toast.makeText(this, "Minimizer is running", Toast.LENGTH_SHORT).show()
     }
 
@@ -179,6 +186,7 @@ class MinimizerOverlayService : LifecycleService() {
         super.onDestroy()
         timerRunning = false
         timerThread?.interrupt()
+        batteryMonitor?.stop()
         wakeLock?.let { if (it.isHeld) it.release() }
         overlayView?.let {
             try { windowManager.removeView(it) } catch (_: Exception) {}
