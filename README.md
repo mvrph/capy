@@ -63,7 +63,17 @@ The handheld maps its controls with **Panda Gamepad Pro** (`com.panda.gamepad`),
 ./.scripts/reactivate-panda.sh [device-ip:port]   # drives Panda's activation UI over wireless adb
 ```
 
-Activation **cannot** be done from inside homebody or via OTA — granting input-injection privilege is outside an app's sandbox. It only works via adb / Shizuku / root, and only while the device is awake and reachable on Wi-Fi. For activation that survives reboots you need **root** (Shizuku auto-starts) or Shizuku's on-device "Start via Wireless debugging".
+Activation **cannot** be done from inside homebody or via OTA — granting input-injection privilege is outside an app's sandbox. It only works via adb / Shizuku / root, and only while the device is awake and reachable on Wi-Fi.
+
+### Hands-off reboot recovery (Olares watcher)
+
+Since the device isn't rooted, Shizuku (and therefore Panda) must be restarted after every reboot. `panda-keepalive.sh` automates this from the always-on **Olares** server over wireless adb — it's both the on-demand "button" and a self-healing watcher:
+
+- Discovers the device's rotating adb port (cached, else `nmap`-scans), connects (pairing persists across reboots).
+- If `shizuku_server` is down, runs Shizuku's starter (`…/lib/arm64/libshizuku.so`, derived from `pm path`) and re-activates Panda via its UI, then DMs you.
+- If Shizuku is already up, it's a no-op (no screen wake / taps).
+
+Runs on Olares as a **systemd user timer** (`panda-keepalive.timer`, on boot + every 5 min), so within ~5 min of a handheld reboot Panda is back without intervention. One-time Olares setup: install adb + nmap, and `adb pair` once (the pairing survives reboots). Fully automatic, reboot-persistent activation otherwise requires **rooting** the device (Shizuku "start on boot").
 
 ## Scripts (`.scripts/`)
 
@@ -72,7 +82,8 @@ Activation **cannot** be done from inside homebody or via OTA — granting input
 | `build.sh` | Build the debug APK. |
 | `deploy.sh <ip> [port]` | Build (release by default) + install + launch over wireless adb. `BUILD_TYPE=debug` for debug. |
 | `publish-ota.sh` | Upload the built release APK + write `latest.json` to the Olares OTA server. |
-| `reactivate-panda.sh [ip:port]` | Re-activate Panda Gamepad Pro after a reboot, over wireless adb. |
+| `reactivate-panda.sh [ip:port]` | One-shot Panda re-activation over wireless adb (from any paired machine). |
+| `panda-keepalive.sh [--force]` | Olares watcher/button: rediscover port → restart Shizuku if down → re-activate Panda → DM. Idempotent; run on a systemd timer. |
 
 ## Backend
 
