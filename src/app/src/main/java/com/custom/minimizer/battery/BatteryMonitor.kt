@@ -23,6 +23,20 @@ class BatteryMonitor(private val context: Context) {
         const val KEY_THRESHOLD = "battery_threshold"
         const val DEFAULT_THRESHOLD = 20
         private const val TAG = "BatteryMonitor"
+
+        /**
+         * Converts raw battery level/scale extras to a 0–100 percentage.
+         * Returns -1 when either value is unavailable (level < 0 or scale <= 0).
+         */
+        internal fun computeLevelPct(level: Int, scale: Int): Int =
+            if (level >= 0 && scale > 0) level * 100 / scale else -1
+
+        /**
+         * Returns true when the battery has recovered (charging or above the
+         * threshold) and the low-alert latch should be re-armed.
+         */
+        internal fun shouldRearm(pct: Int, charging: Boolean, threshold: Int): Boolean =
+            charging || pct > threshold
     }
 
     // Latched so a single low episode produces one alert, not one per % tick.
@@ -56,7 +70,7 @@ class BatteryMonitor(private val context: Context) {
         val charging = isCharging(intent)
         val threshold = threshold()
 
-        if (charging || pct > threshold) {
+        if (shouldRearm(pct, charging, threshold)) {
             lowAlertSent = false // recovered — re-arm for the next dip
             return
         }
@@ -81,7 +95,7 @@ class BatteryMonitor(private val context: Context) {
     private fun levelPct(intent: Intent): Int {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-        return if (level >= 0 && scale > 0) level * 100 / scale else -1
+        return computeLevelPct(level, scale)
     }
 
     private fun isCharging(intent: Intent): Boolean =
