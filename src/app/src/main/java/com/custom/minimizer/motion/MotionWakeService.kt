@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.LifecycleService
 import com.custom.minimizer.overlay.MinimizerOverlayService
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 class MotionWakeService : LifecycleService(), SensorEventListener {
@@ -32,6 +33,14 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         const val DEFAULT_SENSITIVITY = 3.0f
         private const val CHANNEL_ID = "motion_wake_channel"
         private const val NOTIFICATION_ID = 2
+
+        /** Euclidean magnitude of a 3-axis accelerometer reading (m/s²). */
+        internal fun vectorMagnitude(x: Float, y: Float, z: Float): Float =
+            sqrt((x * x + y * y + z * z).toDouble()).toFloat()
+
+        /** True when the change in magnitude exceeds the configured sensitivity threshold. */
+        internal fun isMotionExceeded(delta: Float, sensitivity: Float): Boolean =
+            delta > sensitivity
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -70,10 +79,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
-        val x = event.values[0]
-        val y = event.values[1]
-        val z = event.values[2]
-        val magnitude = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
+        val magnitude = vectorMagnitude(event.values[0], event.values[1], event.values[2])
 
         if (!initialized) {
             lastMagnitude = magnitude
@@ -81,11 +87,11 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
             return
         }
 
-        val delta = Math.abs(magnitude - lastMagnitude)
+        val delta = abs(magnitude - lastMagnitude)
         lastMagnitude = magnitude
 
         // Only wake if screen is off and motion exceeds threshold
-        if (delta > sensitivity && !powerManager.isInteractive) {
+        if (isMotionExceeded(delta, sensitivity) && !powerManager.isInteractive) {
             Log.i("MotionWake", "Motion detected (delta=$delta), waking and restoring app")
             wakeAndRestoreApp()
         }
