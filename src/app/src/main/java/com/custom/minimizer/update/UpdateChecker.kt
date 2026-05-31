@@ -26,6 +26,14 @@ object UpdateChecker {
     const val MANIFEST_URL = "http://192.168.4.222:8002/homebody/latest.json"
     private const val TAG = "OTA"
 
+    /**
+     * True when the manifest advertises a build newer than the installed one.
+     * Returns false for the sentinel value -1 (manifest field absent) so a
+     * missing or malformed manifest never triggers a download.
+     */
+    internal fun isNewer(manifestVersionCode: Int, installedVersionCode: Int): Boolean =
+        manifestVersionCode > installedVersionCode
+
     fun checkAndPrompt(activity: Activity) {
         Thread {
             try {
@@ -33,7 +41,7 @@ object UpdateChecker {
                 val latest = manifest.optInt("versionCode", -1)
                 val current = currentVersionCode(activity)
                 Log.i(TAG, "manifest versionCode=$latest, installed=$current")
-                if (latest <= current) return@Thread
+                if (!isNewer(latest, current)) return@Thread
 
                 val apkUrl = manifest.optString("apkUrl").ifEmpty { return@Thread }
                 val apk = downloadApk(activity, apkUrl, latest) ?: return@Thread
