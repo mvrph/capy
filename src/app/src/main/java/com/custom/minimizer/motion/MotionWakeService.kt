@@ -109,9 +109,18 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         screenLock.acquire(3000L)
 
         // Dismiss the keyguard, otherwise the restored activity launches behind
-        // the lock screen and the user just sees "home". disableKeyguard() only
-        // works for a non-secure keyguard (no PIN/pattern) — exactly this
-        // handheld's setup; on a secure lock it's a safe no-op.
+        // the lock screen and the user just sees "home".
+        //
+        // We use the deprecated KeyguardLock.disableKeyguard() deliberately:
+        // DISABLE_KEYGUARD is a *normal*-protection permission (auto-granted at
+        // install — no signature/system app needed, despite the scary name), and
+        // this is a Service restoring a *third-party* app, so the modern
+        // Activity-only APIs (setShowWhenLocked / requestDismissKeyguard) don't
+        // apply — we can't set showWhenLocked on another app's activity.
+        // disableKeyguard() only suppresses a *non-secure* keyguard (no
+        // PIN/pattern) — exactly this handheld's setup; on a secure lock it's a
+        // best-effort no-op (you can't auto-dismiss a secure keyguard from the
+        // background anyway), and any failure is caught + logged below.
         try {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
             @Suppress("DEPRECATION")
