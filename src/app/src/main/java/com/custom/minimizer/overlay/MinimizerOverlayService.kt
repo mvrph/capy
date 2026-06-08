@@ -3,6 +3,7 @@ package com.custom.minimizer.overlay
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -32,6 +33,9 @@ class MinimizerOverlayService : LifecycleService() {
     @Volatile private var lastTouchTime: Long = 0
     @Volatile private var timerRunning = false
     private var timerThread: Thread? = null
+
+    // Most recent foreground app sampled on touch; persisted at goHome().
+    @Volatile private var lastForegroundApp: String? = null
 
     companion object {
         const val PREFS_NAME = "capy_prefs"
@@ -120,7 +124,11 @@ class MinimizerOverlayService : LifecycleService() {
                 MotionEvent.ACTION_OUTSIDE -> {
                     lastTouchTime = System.currentTimeMillis()
                     Log.i("Minimizer", "Touch detected, timer resets (${timer}ms)")
-                    saveCurrentForegroundApp()
+                    // Keep a fresh in-memory sample of what the user is on. The
+                    // decisive persist happens in goHome() (see saveLastApp), so
+                    // the restore target survives even if ACTION_OUTSIDE delivery
+                    // is flaky right before we go home.
+                    resolveForegroundApp()?.let { lastForegroundApp = it }
                     true
                 }
                 else -> false
@@ -157,29 +165,59 @@ class MinimizerOverlayService : LifecycleService() {
         timerThread?.start()
     }
 
-    private fun saveCurrentForegroundApp() {
-        try {
-            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val now = System.currentTimeMillis()
-            val stats = usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
-                now - 5000,
-                now
-            )
-            if (stats != null && stats.isNotEmpty()) {
-                val recentApp = stats
-                    .filter { it.packageName != packageName && it.packageName != "com.android.launcher3" }
-                    .maxByOrNull { it.lastTimeUsed }
+    /** The current default launcher's package, so we never save "home" as the
+     *  app to restore. Resolved dynamically — it isn't always launcher3. */
+    private fun launcherPackage(): String? = try {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        packageManager.resolveActivity(home, 0)?.activityInfo?.packageName
+    } catch (e: Exception) {
+        Log.e("Minimizer", "launcherPackage failed: $e"); null
+    }
 
-                recentApp?.let {
-                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    prefs.edit().putString(KEY_LAST_APP, it.packageName).apply()
-                    Log.i("Minimizer", "Saved last app: ${it.packageName}")
+    /**
+     * Best effort "what app is the user on" via UsageStats, excluding ourselves
+     * and the launcher. Prefers the most recent foreground *transition* from
+     * queryEvents (reliable), falling back to the daily aggregate by
+     * lastTimeUsed (covers sessions longer than the events window). Returns
+     * null only when usage access is missing or nothing qualifies.
+     */
+    private fun resolveForegroundApp(): String? {
+        return try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val now = System.currentTimeMillis()
+            val launcher = launcherPackage()
+            val mine = packageName
+
+            // 1) Scan the last hour of foreground transitions; events are
+            //    time-ordered, so the last qualifying one is the current app.
+            val events = usm.queryEvents(now - 60 * 60 * 1000L, now)
+            val ev = UsageEvents.Event()
+            var latest: String? = null
+            while (events.hasNextEvent()) {
+                events.getNextEvent(ev)
+                if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    val pkg = ev.packageName
+                    if (pkg != null && pkg != mine && pkg != launcher) latest = pkg
                 }
             }
+            if (latest != null) return latest
+
+            // 2) Fallback for long single-app sessions with no recent transition.
+            usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 24 * 60 * 60 * 1000L, now)
+                ?.filter { it.packageName != mine && it.packageName != launcher && it.lastTimeUsed > 0 }
+                ?.maxByOrNull { it.lastTimeUsed }
+                ?.packageName
         } catch (e: Exception) {
-            Log.e("Minimizer", "Failed to get foreground app: $e")
+            Log.e("Minimizer", "resolveForegroundApp failed: $e"); null
         }
+    }
+
+    /** Persist the app to restore on the next motion wake. */
+    private fun saveLastApp(pkg: String) {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_LAST_APP, pkg).apply()
+        Log.i("Minimizer", "Saved last app: $pkg")
     }
 
     override fun onDestroy() {
@@ -194,6 +232,11 @@ class MinimizerOverlayService : LifecycleService() {
     }
 
     private fun goHome() {
+        // Capture the app we're about to leave so motion-wake can restore it.
+        // This is the decisive moment (foreground == the app the user was on),
+        // so it doesn't depend on ACTION_OUTSIDE having fired beforehand.
+        (resolveForegroundApp() ?: lastForegroundApp)?.let { saveLastApp(it) }
+
         val goHomeScreen = Intent(Intent.ACTION_MAIN)
         goHomeScreen.addCategory(Intent.CATEGORY_HOME)
         goHomeScreen.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

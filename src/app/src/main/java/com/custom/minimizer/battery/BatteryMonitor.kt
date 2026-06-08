@@ -81,6 +81,13 @@ class BatteryMonitor(private val context: Context) {
                 context, "battery", "Battery low: $pct%",
                 baseJson(pct, charging).put("event", "low_battery").put("threshold", threshold)
             )
+            // Surface it on the stele wall display via pulsar's push bus
+            // (source=incident → renders as a notification card on the kiosk).
+            PulsarClient.publishPush(
+                source = "incident",
+                title = "🔋 homebody battery low: $pct%",
+                body = "${Build.MODEL} at $pct% (threshold $threshold%), unplugged."
+            )
             // Alert via the Discord bot (discord_bot_api → DM).
             DiscordClient.sendMessage(
                 "🔋 homebody (${Build.MODEL}) battery low: $pct% (threshold $threshold%), unplugged."
