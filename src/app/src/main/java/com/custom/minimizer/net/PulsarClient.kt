@@ -74,6 +74,33 @@ object PulsarClient {
     }
 
     /**
+     * Publish a push message to pulsar's broadcast bus (POST /v1/push/publish),
+     * which fans out over SSE to live consumers like the stele wall display.
+     * Independent of sessions/reports — no session registration needed.
+     *
+     * [source] must be one of pulsar's allow-list: announcement | incident |
+     * account | update | security. [title] is capped at 120 chars server-side,
+     * [body] at 600; we trim defensively so a long value can't 4xx the publish.
+     */
+    fun publishPush(source: String, title: String, body: String? = null) {
+        worker.execute {
+            try {
+                val conn = open("/v1/push/publish", "POST")
+                val payload = JSONObject()
+                    .put("source", source)
+                    .put("title", title.take(120))
+                if (body != null) payload.put("body", body.take(600))
+                conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+                val code = conn.responseCode
+                Log.i(TAG, "push '$title' -> HTTP $code")
+                conn.disconnect()
+            } catch (e: Exception) {
+                Log.e(TAG, "publishPush failed: $e")
+            }
+        }
+    }
+
+    /**
      * POST a report to pulsar on a background thread. [body] is sent as a JSON
      * object (pulsar's ReportCreate.body accepts dict | str).
      */

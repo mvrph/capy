@@ -1,5 +1,6 @@
 package com.custom.minimizer.motion
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -106,6 +107,18 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
             "capy:motionwake_screen"
         )
         screenLock.acquire(3000L)
+
+        // Dismiss the keyguard, otherwise the restored activity launches behind
+        // the lock screen and the user just sees "home". disableKeyguard() only
+        // works for a non-secure keyguard (no PIN/pattern) — exactly this
+        // handheld's setup; on a secure lock it's a safe no-op.
+        try {
+            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            @Suppress("DEPRECATION")
+            keyguardManager.newKeyguardLock("capy:motionwake").disableKeyguard()
+        } catch (e: Exception) {
+            Log.e("MotionWake", "Keyguard dismiss failed: $e")
+        }
 
         // Restore the last app
         val prefs = getSharedPreferences(MinimizerOverlayService.PREFS_NAME, Context.MODE_PRIVATE)
