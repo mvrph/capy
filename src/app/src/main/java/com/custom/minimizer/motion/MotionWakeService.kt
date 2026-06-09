@@ -10,8 +10,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.hardware.TriggerEvent
-import android.hardware.TriggerEventListener
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
@@ -28,10 +26,9 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     private var cpuWakeLock: PowerManager.WakeLock? = null
     private var lastMagnitude: Float = 0f
     private var initialized = false
-    private var usingSignificantMotion = false
 
     // How much acceleration change (m/s²) counts as "picked up" — accelerometer
-    // fallback only; significant motion has its own hardware threshold.
+    // fallback only; the tilt detector has its own hardware threshold.
     private var sensitivity: Float = DEFAULT_SENSITIVITY
 
     companion object {
@@ -40,6 +37,13 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         const val KEY_ENABLED = "motion_wake_enabled"
         private const val CHANNEL_ID = "motion_wake_channel"
         private const val NOTIFICATION_ID = 2
+
+        // Sensor.TYPE_TILT_DETECTOR is @hide in the public SDK, so reference it
+        // by its stable platform int (android.sensor.tilt_detector). It's a
+        // wake-up sensor that fires on a lift/tilt — i.e. picking the device up.
+        // Significant-motion was too coarse (built for "started walking") and
+        // never fired on a desk pickup.
+        private const val TYPE_TILT_DETECTOR = 22
 
         /** Euclidean magnitude of a 3-axis accelerometer reading (m/s²). */
         internal fun vectorMagnitude(x: Float, y: Float, z: Float): Float =
@@ -50,20 +54,9 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
             delta > sensitivity
     }
 
-    private fun significantMotionSensor(): Sensor? =
-        sensorManager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
-
-    // Significant Motion is a one-shot wake-up trigger: it fires once when the
-    // device is moved meaningfully (e.g. picked up), waking the CPU from deep
-    // sleep on its own — no held wake lock, negligible battery. It must be
-    // re-armed after every fire.
-    private val triggerListener = object : TriggerEventListener() {
-        override fun onTrigger(event: TriggerEvent?) {
-            Log.i("MotionWake", "Significant motion detected")
-            if (!powerManager.isInteractive) wakeAndRestoreApp()
-            significantMotionSensor()?.let { sensorManager.requestTriggerSensor(this, it) }
-        }
-    }
+    /** The tilt detector, if this device exposes one as a wake-up sensor. */
+    private fun tiltSensor(): Sensor? =
+        sensorManager.getDefaultSensor(TYPE_TILT_DETECTOR)?.takeIf { it.isWakeUpSensor }
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,34 +69,33 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
 
-        val sigMotion = significantMotionSensor()
-        if (sigMotion != null) {
-            // Preferred: hardware wake-up trigger. No CPU wake lock — the sensor
-            // wakes the AP itself, so this survives Doze/suspend and barely
-            // touches the battery (which is why it doesn't get reaped after
-            // hours like the old always-on accelerometer + wake lock did).
-            usingSignificantMotion = true
-            sensorManager.requestTriggerSensor(triggerListener, sigMotion)
-            Log.i("MotionWake", "Using significant-motion wake-up sensor")
+        val tilt = tiltSensor()
+        if (tilt != null) {
+            // Preferred: the tilt detector is a wake-up sensor, so it wakes the
+            // AP itself on a lift — no held wake lock. That survives Doze/suspend
+            // and barely touches the battery (the old always-on accelerometer +
+            // permanent wake lock is what drained it and got the app reaped).
+            sensorManager.registerListener(this, tilt, SensorManager.SENSOR_DELAY_NORMAL)
+            Log.i("MotionWake", "Using tilt-detector wake-up sensor")
         } else {
-            // Fallback for devices with no significant-motion sensor: poll the
-            // accelerometer. This needs the CPU awake to keep receiving events
-            // while the screen is off, so the partial wake lock lives here only.
-            usingSignificantMotion = false
-            cpuWakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "capy:motionwake_cpu"
-            ).also { it.acquire() }
-
+            // Fallback for devices without a tilt detector: poll the
+            // accelerometer. A non-wake-up accelerometer needs the CPU awake to
+            // keep delivering while the screen is off, so the partial wake lock
+            // lives here only (and only when the accelerometer isn't wake-up).
             val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
                 ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
             if (accelerometer != null) {
+                if (!accelerometer.isWakeUpSensor) {
+                    cpuWakeLock = powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "capy:motionwake_cpu"
+                    ).also { it.acquire() }
+                }
                 sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
                 Log.i("MotionWake", "Using accelerometer fallback (wakeUp=${accelerometer.isWakeUpSensor}), sensitivity=$sensitivity")
             } else {
                 Log.e("MotionWake", "No accelerometer available on this device")
-                cpuWakeLock?.release(); cpuWakeLock = null
                 stopSelf()
             }
         }
@@ -115,6 +107,15 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        // Tilt detector: each event is a discrete "device was lifted/tilted".
+        if (event.sensor.type == TYPE_TILT_DETECTOR) {
+            if (!powerManager.isInteractive) {
+                Log.i("MotionWake", "Tilt detected, waking")
+                wakeAndRestoreApp()
+            }
+            return
+        }
+
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
         val magnitude = vectorMagnitude(event.values[0], event.values[1], event.values[2])
@@ -206,6 +207,11 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
             } catch (e: Exception) {
                 Log.e("MotionWake", "Failed to restore app $lastApp: $e")
             }
+        } else {
+            // Nothing captured yet (no inactivity→home cycle has run) — just
+            // wake the device, which the screen lock + keyguard dismiss above
+            // already did.
+            Log.i("MotionWake", "No saved app — woke device only")
         }
 
         screenLock.release()
@@ -232,11 +238,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (usingSignificantMotion) {
-            significantMotionSensor()?.let { sensorManager.cancelTriggerSensor(triggerListener, it) }
-        } else {
-            sensorManager.unregisterListener(this)
-        }
+        sensorManager.unregisterListener(this)
         cpuWakeLock?.let {
             if (it.isHeld) it.release()
         }
