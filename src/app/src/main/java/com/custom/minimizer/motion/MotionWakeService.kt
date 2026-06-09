@@ -10,6 +10,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.TriggerEvent
+import android.hardware.TriggerEventListener
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
@@ -26,12 +28,16 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     private var cpuWakeLock: PowerManager.WakeLock? = null
     private var lastMagnitude: Float = 0f
     private var initialized = false
+    private var usingSignificantMotion = false
 
-    // How much acceleration change (m/s²) counts as "picked up"
+    // How much acceleration change (m/s²) counts as "picked up" — accelerometer
+    // fallback only; significant motion has its own hardware threshold.
     private var sensitivity: Float = DEFAULT_SENSITIVITY
 
     companion object {
         const val DEFAULT_SENSITIVITY = 3.0f
+        const val PREFS_NAME = "capy_prefs"
+        const val KEY_ENABLED = "motion_wake_enabled"
         private const val CHANNEL_ID = "motion_wake_channel"
         private const val NOTIFICATION_ID = 2
 
@@ -44,8 +50,25 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
             delta > sensitivity
     }
 
+    private fun significantMotionSensor(): Sensor? =
+        sensorManager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
+
+    // Significant Motion is a one-shot wake-up trigger: it fires once when the
+    // device is moved meaningfully (e.g. picked up), waking the CPU from deep
+    // sleep on its own — no held wake lock, negligible battery. It must be
+    // re-armed after every fire.
+    private val triggerListener = object : TriggerEventListener() {
+        override fun onTrigger(event: TriggerEvent?) {
+            Log.i("MotionWake", "Significant motion detected")
+            if (!powerManager.isInteractive) wakeAndRestoreApp()
+            significantMotionSensor()?.let { sensorManager.requestTriggerSensor(this, it) }
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // intent is null when the system restarts us via START_STICKY after a
+        // kill — fall back to the default sensitivity in that case.
         sensitivity = intent?.getFloatExtra("sensitivity", DEFAULT_SENSITIVITY) ?: DEFAULT_SENSITIVITY
 
         startForegroundNotification()
@@ -53,28 +76,42 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
 
-        // Hold a partial wake lock to keep the CPU alive when screen is off
-        // so we continue receiving sensor events
-        cpuWakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "capy:motionwake_cpu"
-        )
-        cpuWakeLock?.acquire()
-
-        // Prefer the wake-up accelerometer variant so events fire while screen is off
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
-            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-
-        if (accelerometer != null) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-            Log.i("MotionWake", "Accelerometer registered (wakeUp=${accelerometer.isWakeUpSensor}), sensitivity=$sensitivity")
+        val sigMotion = significantMotionSensor()
+        if (sigMotion != null) {
+            // Preferred: hardware wake-up trigger. No CPU wake lock — the sensor
+            // wakes the AP itself, so this survives Doze/suspend and barely
+            // touches the battery (which is why it doesn't get reaped after
+            // hours like the old always-on accelerometer + wake lock did).
+            usingSignificantMotion = true
+            sensorManager.requestTriggerSensor(triggerListener, sigMotion)
+            Log.i("MotionWake", "Using significant-motion wake-up sensor")
         } else {
-            Log.e("MotionWake", "No accelerometer available on this device")
-            cpuWakeLock?.release()
-            stopSelf()
+            // Fallback for devices with no significant-motion sensor: poll the
+            // accelerometer. This needs the CPU awake to keep receiving events
+            // while the screen is off, so the partial wake lock lives here only.
+            usingSignificantMotion = false
+            cpuWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "capy:motionwake_cpu"
+            ).also { it.acquire() }
+
+            val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
+                ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+            if (accelerometer != null) {
+                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+                Log.i("MotionWake", "Using accelerometer fallback (wakeUp=${accelerometer.isWakeUpSensor}), sensitivity=$sensitivity")
+            } else {
+                Log.e("MotionWake", "No accelerometer available on this device")
+                cpuWakeLock?.release(); cpuWakeLock = null
+                stopSelf()
+            }
         }
 
-        return super.onStartCommand(intent, flags, startId)
+        super.onStartCommand(intent, flags, startId)
+        // START_STICKY: if the process is reclaimed, the system restarts us
+        // (null intent) and we re-arm the sensor above.
+        return START_STICKY
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -195,7 +232,11 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
 
     override fun onDestroy() {
         super.onDestroy()
-        sensorManager.unregisterListener(this)
+        if (usingSignificantMotion) {
+            significantMotionSensor()?.let { sensorManager.cancelTriggerSensor(triggerListener, it) }
+        } else {
+            sensorManager.unregisterListener(this)
+        }
         cpuWakeLock?.let {
             if (it.isHeld) it.release()
         }

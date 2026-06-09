@@ -134,29 +134,44 @@ class MainActivity : AppCompatActivity() {
             stopService(minimizerIntent)
             minimizerServiceStarted = false
             motionWakeIntent?.let { stopService(it) }
+            // Explicit stop should stick — don't let BootReceiver/relaunch re-arm.
+            getSharedPreferences(MotionWakeService.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(MotionWakeService.KEY_ENABLED, false).apply()
             finish()
         }
     }
 
     private fun motionWakeSwitchSetUp() {
         val switch = findViewById<SwitchMaterial>(R.id.motionWakeSwitch)
+        val prefs = getSharedPreferences(MotionWakeService.PREFS_NAME, Context.MODE_PRIVATE)
 
         switch.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 if (!hasUsageStatsPermission()) {
                     switch.isChecked = false
+                    prefs.edit().putBoolean(MotionWakeService.KEY_ENABLED, false).apply()
                     Toast.makeText(this, "Usage Access permission required for app restore", Toast.LENGTH_LONG).show()
                     startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                     return@setOnCheckedChangeListener
                 }
+                // Persist so it stays enabled across process death + reboots
+                // (re-armed below on launch and by BootReceiver).
+                prefs.edit().putBoolean(MotionWakeService.KEY_ENABLED, true).apply()
                 motionWakeIntent = Intent(this, MotionWakeService::class.java)
                 startForegroundService(motionWakeIntent)
                 Toast.makeText(this, "Motion Wake enabled", Toast.LENGTH_SHORT).show()
             } else {
+                prefs.edit().putBoolean(MotionWakeService.KEY_ENABLED, false).apply()
                 motionWakeIntent?.let { stopService(it) }
                 motionWakeIntent = null
                 Toast.makeText(this, "Motion Wake disabled", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        // Restore the persisted state: if the user had it on (and still has
+        // permission), flip the switch back on — which re-arms the service.
+        if (prefs.getBoolean(MotionWakeService.KEY_ENABLED, false) && hasUsageStatsPermission()) {
+            switch.isChecked = true
         }
     }
 
