@@ -28,6 +28,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private lateinit var powerManager: PowerManager
     private var cpuWakeLock: PowerManager.WakeLock? = null
+    private var keyguardLock: KeyguardManager.KeyguardLock? = null
     private var lastMagnitude: Float = 0f
     private var initialized = false
 
@@ -47,6 +48,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
                 Log.i("MotionWake", "Screen on at launcher — restoring last app")
                 dismissKeyguard()
                 restoreLastApp()
+                reenableKeyguard()
             }
         }
     }
@@ -169,7 +171,9 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun wakeAndRestoreApp() {
-        // Wake the screen
+        // Stamp before the screen lights up so the screen-on receiver's debounce
+        // check sees a recent timestamp and doesn't fire a second restore.
+        lastRestoreAt = System.currentTimeMillis()
         val screenLock = powerManager.newWakeLock(
             PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
             "capy:motionwake_screen"
@@ -177,6 +181,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         screenLock.acquire(3000L)
         dismissKeyguard()
         restoreLastApp()
+        reenableKeyguard()
         screenLock.release()
     }
 
@@ -197,13 +202,25 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         try {
             val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
             @Suppress("DEPRECATION")
-            keyguardManager.newKeyguardLock("capy:motionwake").disableKeyguard()
+            keyguardLock = keyguardManager.newKeyguardLock("capy:motionwake")
+            keyguardLock?.disableKeyguard()
         } catch (e: Exception) {
             Log.e("MotionWake", "Keyguard dismiss failed: $e")
         }
     }
 
+    private fun reenableKeyguard() {
+        try {
+            keyguardLock?.reenableKeyguard()
+        } catch (e: Exception) {
+            Log.e("MotionWake", "Keyguard re-enable failed: $e")
+        } finally {
+            keyguardLock = null
+        }
+    }
+
     private fun restoreLastApp() {
+        lastRestoreAt = System.currentTimeMillis()
         val prefs = getSharedPreferences(MinimizerOverlayService.PREFS_NAME, Context.MODE_PRIVATE)
         val lastApp = prefs.getString(MinimizerOverlayService.KEY_LAST_APP, null)
 
@@ -245,7 +262,6 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         try {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launchIntent)
-            lastRestoreAt = System.currentTimeMillis()
             Log.i("MotionWake", "Restored app: $lastApp")
         } catch (e: Exception) {
             Log.e("MotionWake", "Failed to restore app $lastApp: $e")
@@ -261,9 +277,9 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         null
     }
 
-    /** True when the foreground (at screen-on) is the launcher or unknown — i.e.
-     *  the user woke to home, so resuming the last app is welcome rather than an
-     *  interruption of something they deliberately opened. */
+    /** True when the foreground (at screen-on) is the launcher. Returns false when
+     *  the foreground app is unknown or can't be determined, to avoid interrupting
+     *  a user who is actively using another app. */
     private fun foregroundIsLauncher(): Boolean {
         return try {
             val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -279,9 +295,9 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
                     if (pkg != null && pkg != packageName) fg = pkg
                 }
             }
-            fg == null || fg == launcherPackage()
+            fg != null && fg == launcherPackage()
         } catch (e: Exception) {
-            true // can't tell → lean toward resuming (this device wants it eager)
+            false // can't determine foreground; skip restore to avoid interrupting the user
         }
     }
 
@@ -308,6 +324,7 @@ class MotionWakeService : LifecycleService(), SensorEventListener {
         super.onDestroy()
         sensorManager.unregisterListener(this)
         try { unregisterReceiver(screenOnReceiver) } catch (_: Exception) {}
+        reenableKeyguard()
         cpuWakeLock?.let {
             if (it.isHeld) it.release()
         }
