@@ -62,12 +62,41 @@ class BatteryMonitorTest {
     }
 
     @Test
-    fun `shouldRearm threshold boundary: pct exactly at threshold is not a rearm`() {
+    fun `shouldRearm threshold boundary - pct exactly at threshold is not a rearm`() {
         assertFalse(BatteryMonitor.shouldRearm(pct = 20, charging = false, threshold = 20))
     }
 
     @Test
-    fun `shouldRearm threshold boundary: pct one above threshold triggers rearm`() {
+    fun `shouldRearm threshold boundary - pct one above threshold triggers rearm`() {
         assertTrue(BatteryMonitor.shouldRearm(pct = 21, charging = false, threshold = 20))
+    }
+
+    // ── hysteresis (capy#19): warn low, only clear once recovered ─────────────
+
+    @Test
+    fun `recovery line sits above the warn threshold so it can't flap`() {
+        assertTrue(BatteryMonitor.DEFAULT_RECOVERY > BatteryMonitor.DEFAULT_THRESHOLD)
+    }
+
+    @Test
+    fun `between warn and recovery is the dead zone - neither low nor recovered`() {
+        val warn = BatteryMonitor.DEFAULT_THRESHOLD
+        val rec = BatteryMonitor.DEFAULT_RECOVERY
+        // 50% unplugged: not recovered (below recovery line) ...
+        assertFalse(BatteryMonitor.shouldRearm(pct = 50, charging = false, threshold = rec))
+        // ... and above the warn line, so it wouldn't (re-)fire a low alert.
+        assertTrue(50 > warn)
+    }
+
+    @Test
+    fun `clears only at or above the recovery line when unplugged`() {
+        val rec = BatteryMonitor.DEFAULT_RECOVERY
+        assertFalse(BatteryMonitor.shouldRearm(pct = rec, charging = false, threshold = rec))
+        assertTrue(BatteryMonitor.shouldRearm(pct = rec + 1, charging = false, threshold = rec))
+    }
+
+    @Test
+    fun `charging clears the alert at any level`() {
+        assertTrue(BatteryMonitor.shouldRearm(pct = 5, charging = true, threshold = BatteryMonitor.DEFAULT_RECOVERY))
     }
 }

@@ -82,7 +82,7 @@ object PulsarClient {
      * account | update | security. [title] is capped at 120 chars server-side,
      * [body] at 600; we trim defensively so a long value can't 4xx the publish.
      */
-    fun publishPush(source: String, title: String, body: String? = null) {
+    fun publishPush(source: String, title: String, body: String? = null, ttl: Int? = null) {
         worker.execute {
             try {
                 val conn = open("/v1/push/publish", "POST")
@@ -90,6 +90,10 @@ object PulsarClient {
                     .put("source", source)
                     .put("title", title.take(120))
                 if (body != null) payload.put("body", body.take(600))
+                // ttl (seconds): the kiosk drops the card once it's older than
+                // this, so a stale alert can't linger forever even if no recovery
+                // event is observed.
+                if (ttl != null) payload.put("ttl", ttl)
                 conn.outputStream.use { it.write(payload.toString().toByteArray()) }
                 val code = conn.responseCode
                 Log.i(TAG, "push '$title' -> HTTP $code")
