@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import com.custom.minimizer.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -27,7 +28,11 @@ object PulsarClient {
     // pulsar listens on 0.0.0.0:8001 on Olares (192.168.4.222). The handheld is
     // on the same /22 LAN, so the LAN address is the fast path.
     const val BASE_URL = "http://192.168.4.222:8001"
-    private const val AUTH_TOKEN = "ed5e68f5199aca21f584269523e32dc401cf9ba41bbb93c49751b9e1054bd044"
+    // Injected via BuildConfig from the gitignored keystore.properties (or the
+    // PULSAR_TOKEN env var in CI) — never hardcoded. Empty in a build without
+    // the secret, in which case the Authorization header is omitted and pulsar
+    // rejects the call, which the callers already handle gracefully.
+    private val AUTH_TOKEN = BuildConfig.PULSAR_TOKEN
     private const val APP_NAME = "homebody"
     private const val APP_VERSION = "1.0"
     private const val TAG = "Pulsar"
@@ -43,7 +48,7 @@ object PulsarClient {
     private fun open(path: String, method: String): HttpURLConnection =
         (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            setRequestProperty("Authorization", "Bearer $AUTH_TOKEN")
+            if (AUTH_TOKEN.isNotEmpty()) setRequestProperty("Authorization", "Bearer $AUTH_TOKEN")
             setRequestProperty("Content-Type", "application/json")
             connectTimeout = 8000
             readTimeout = 8000

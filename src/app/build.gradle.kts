@@ -6,11 +6,23 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
-// Release signing — loaded from keystore.properties (committed alongside the keystore).
+// Release signing + secrets — loaded from keystore.properties, which is
+// GITIGNORED and lives only on the build machine (never committed). The file
+// holds the keystore passwords AND the pulsar bearer token, so the build works
+// locally without any secret ever entering git. On a machine without it,
+// release signing is skipped and the pulsar token defaults to empty.
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) load(FileInputStream(keystorePropertiesFile))
 }
+
+// Pulsar bearer token: gitignored keystore.properties first, then a PULSAR_TOKEN
+// env var (for CI secrets), else empty. Baked into BuildConfig so no token is
+// ever hardcoded in source. An empty token just means telemetry auth is
+// unavailable in that build (calls fail gracefully) — see PulsarClient.
+val pulsarToken = (keystoreProperties["pulsarToken"] as String?)
+    ?: System.getenv("PULSAR_TOKEN")
+    ?: ""
 
 android {
     namespace = "com.custom.minimizer"
@@ -26,6 +38,13 @@ android {
         versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Injected at build time (see pulsarToken above) — never committed.
+        buildConfigField("String", "PULSAR_TOKEN", "\"$pulsarToken\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {

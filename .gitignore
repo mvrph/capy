@@ -1,6 +1,7 @@
 # Android build output
 src/.gradle/
 src/app/build/
+src/.kotlin/
 src/build/
 
 # Local config (machine-specific)
@@ -10,12 +11,14 @@ src/local.properties
 src/.idea/
 *.iml
 
-# Keys / signing
+# Keys / signing — NEVER commit these. This is a public repo; a committed
+# keystore + its passwords hands anyone the app's release signing identity, and
+# a committed bearer token is a live credential. Signing material and secrets
+# live only on the build machine (or in CI secrets), never in git.
 *.jks
 *.keystore
-# ...but the capy release keystore is committed intentionally so any machine can
-# build a permanent (non-expiring) signed release. Keep it private to this repo.
-!src/app/capy-release.jks
+keystore.properties
+src/keystore.properties
 
 # OS
 .DS_Store
