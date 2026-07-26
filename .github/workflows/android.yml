@@ -22,7 +22,7 @@ jobs:
       # Self-hosted Olares runner pod doesn't ship with Android SDK
       # preinstalled (unlike ubuntu-latest). Install + accept licenses.
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
